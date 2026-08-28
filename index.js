@@ -15,11 +15,17 @@ app.post('/webhook', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // Chamada para a API do Gemini com o modelo correto (gemini-3.6-flash)
+    // Instrução de sistema para definir a especialidade do bot
+    const systemPrompt = "Você é um Agente Hacker especialista em programação, desenvolvimento de software, criação de sistemas, algoritmos, automações e lógica avançada. Forneça respostas técnicas e precisas, escreva códigos limpos, funcionais e bem comentados sempre que solicitado.";
+
+    // Chamada para a API do Gemini com o system_instruction e o modelo gemini-3.6-flash
     const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        system_instruction: {
+          parts: [{ text: systemPrompt }]
+        },
         contents: [{ parts: [{ text: text }] }]
       })
     });
