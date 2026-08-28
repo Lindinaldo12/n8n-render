@@ -15,8 +15,8 @@ app.post('/webhook', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // Chamada para a API do Gemini
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    // Chamada para a API do Gemini com o modelo atualizado
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -35,7 +35,7 @@ app.post('/webhook', async (req, res) => {
       replyText = `Erro da API Gemini: ${geminiData.error.message}`;
     }
 
-    // Envia a resposta para o Telegram
+    // Envia a resposta de volta para o Telegram
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
