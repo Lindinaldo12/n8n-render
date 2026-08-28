@@ -4,13 +4,9 @@ services:
     env: docker
     plan: free
     region: ohio
-    disk:
-      name: n8n-data
-      mountPath: /home/node/.n8n
-      sizeGB: 1
     envVars:
       - key: WEBHOOK_URL
         fromService:
           type: web
           name: n8n
-          property: url
+          property: hostport
