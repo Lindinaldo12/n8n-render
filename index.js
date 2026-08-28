@@ -15,8 +15,8 @@ app.post('/webhook', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // Chamada para a API do Gemini com o modelo atualizado
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    // Chamada para a API do Gemini com o modelo correto (gemini-3.6-flash)
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
