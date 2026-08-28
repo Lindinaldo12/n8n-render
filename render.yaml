@@ -1,7 +1,7 @@
 services:
   - type: web
     name: n8n
-    runtime: image
+    env: docker
     image: n8nio/n8n:latest
     plan: free
     region: ohio
