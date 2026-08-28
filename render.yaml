@@ -1,7 +1,8 @@
 services:
   - type: web
     name: n8n
-    env: docker
+    runtime: image
+    image: n8nio/n8n:latest
     plan: free
     region: ohio
     envVars:
@@ -10,3 +11,11 @@ services:
           type: web
           name: n8n
           property: hostport
+      - key: GENERIC_TIMEZONE
+        value: America/Sao_Paulo
+      - key: N8N_BASIC_AUTH_ACTIVE
+        value: "true"
+      - key: N8N_BASIC_AUTH_USER
+        value: admin
+      - key: N8N_BASIC_AUTH_PASSWORD
+        value: SenhaForte123
