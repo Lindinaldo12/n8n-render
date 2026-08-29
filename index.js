@@ -6,6 +6,22 @@ const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
+// Memória para registrar os usuários que já acertaram a senha
+const usuariosAutenticados = new Set();
+const SENHA_MESTRA = "minhasenha123";
+
+// Função auxiliar para enviar mensagens no Telegram
+async function enviarMensagemTelegram(chatId, text) {
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text
+    })
+  });
+}
+
 app.post('/webhook', async (req, res) => {
   try {
     console.log("Mensagem recebida do Telegram:", JSON.stringify(req.body));
@@ -15,17 +31,22 @@ app.post('/webhook', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // Instrução de sistema para definir a especialidade do bot
-    const systemPrompt = "Você é um Agente Hacker especialista em programação, desenvolvimento de software, criação de sistemas, algoritmos, automações e lógica avançada. Forneça respostas técnicas e precisas, escreva códigos limpos, funcionais e bem comentados sempre que solicitado.";
+    // 1. Verifica se o usuário já foi autenticado nesta sessão
+    if (!usuariosAutenticados.has(chatId)) {
+      if (text === SENHA_MESTRA) {
+        usuariosAutenticados.add(chatId);
+        await enviarMensagemTelegram(chatId, "Senha correta! Acesso autorizado. Como posso te ajudar?");
+      } else {
+        await enviarMensagemTelegram(chatId, "🔒 Olá! Este bot é protegido. Por favor, digite a senha de acesso para continuar:");
+      }
+      return res.sendStatus(200);
+    }
 
-    // Chamada para a API do Gemini com o system_instruction e o modelo gemini-3.6-flash
+    // 2. Se já estiver autenticado, envia a mensagem normalmente para o Gemini (comportamento geral)
     const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemPrompt }]
-        },
         contents: [{ parts: [{ text: text }] }]
       })
     });
@@ -41,15 +62,8 @@ app.post('/webhook', async (req, res) => {
       replyText = `Erro da API Gemini: ${geminiData.error.message}`;
     }
 
-    // Envia a resposta de volta para o Telegram
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: replyText
-      })
-    });
+    // Envia a resposta de volta para o usuário reconhecido
+    await enviarMensagemTelegram(chatId, replyText);
 
     res.sendStatus(200);
   } catch (error) {
