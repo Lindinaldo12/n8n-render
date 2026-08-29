@@ -6,11 +6,11 @@ const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// Memória para registrar os usuários que já acertaram a senha
+// Memórias em tempo de execução
 const usuariosAutenticados = new Set();
+const historicoConversas = new Map(); // Armazena o histórico de chat por usuário
 const SENHA_MESTRA = "minhasenha123";
 
-// Função auxiliar para enviar mensagens no Telegram
 async function enviarMensagemTelegram(chatId, text) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
     method: 'POST',
@@ -31,7 +31,7 @@ app.post('/webhook', async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text;
 
-    // 1. Verifica se o usuário já foi autenticado nesta sessão
+    // 1. Verificação de senha
     if (!usuariosAutenticados.has(chatId)) {
       if (text === SENHA_MESTRA) {
         usuariosAutenticados.add(chatId);
@@ -42,12 +42,26 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // 2. Se já estiver autenticado, envia a mensagem normalmente para o Gemini (comportamento geral)
+    // 2. Gerenciamento do histórico de curto prazo (contexto da conversa)
+    if (!historicoConversas.has(chatId)) {
+      historicoConversas.set(chatId, []);
+    }
+    const historico = historicoConversas.get(chatId);
+
+    // Adiciona a nova mensagem do usuário ao histórico
+    historico.push({ role: "user", parts: [{ text: text }] });
+
+    // Mantém apenas as últimas 10 mensagens para não sobrecarregar a API
+    if (historico.length > 10) {
+      historico.shift();
+    }
+
+    // 3. Chamada para a API do Gemini enviando todo o histórico de contexto
     const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: text }] }]
+        contents: historico
       })
     });
 
@@ -58,11 +72,13 @@ app.post('/webhook', async (req, res) => {
 
     if (geminiData.candidates && geminiData.candidates[0]?.content?.parts?.[0]?.text) {
       replyText = geminiData.candidates[0].content.parts[0].text;
+      // Adiciona a resposta do bot ao histórico para manter o contexto
+      historico.push({ role: "model", parts: [{ text: replyText }] });
     } else if (geminiData.error) {
       replyText = `Erro da API Gemini: ${geminiData.error.message}`;
     }
 
-    // Envia a resposta de volta para o usuário reconhecido
+    // Envia a resposta de volta para o Telegram
     await enviarMensagemTelegram(chatId, replyText);
 
     res.sendStatus(200);
