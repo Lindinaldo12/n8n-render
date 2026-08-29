@@ -4,7 +4,8 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const OPENROUTER_API_KEY = process.env.GEMINI_API_KEY; // Usa a variável que você configurou no Render
+// Aqui ajustamos para ler a variável correta que você cadastrou no Render
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
 
 const usuariosAutenticados = new Set();
 const historicoConversas = new Map();
@@ -41,7 +42,7 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // 2. Gerenciamento do histórico (Padrão OpenAI / OpenRouter)
+    // 2. Gerenciamento do histórico
     if (!historicoConversas.has(chatId)) {
       historicoConversas.set(chatId, []);
     }
@@ -61,7 +62,7 @@ app.post('/webhook', async (req, res) => {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: "google/gemini-flash-1.5", // Modelo Gemini rodando através do OpenRouter
+        model: "google/gemini-flash-1.5",
         messages: historico
       })
     });
