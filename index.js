@@ -70,7 +70,7 @@ app.post('/webhook', async (req, res) => {
     const text = message.text;
     const userInfo = message.from || {};
 
-    // 👤 Reconhecimento e Perfil Evolutivo do Usuário
+    // 👤 Reconhecimento e Perfil Evolutivo do Usuário (Multi-usuário suportado)
     if (!banco.perfisUsuarios.has(chatId)) {
       banco.perfisUsuarios.set(chatId, {
         firstName: userInfo.first_name || "Amigo",
@@ -99,7 +99,6 @@ app.post('/webhook', async (req, res) => {
     }
     const historico = banco.historicoConversas.get(chatId);
 
-    // Contexto inicial injetado para a IA reconhecer quem é o usuário pelo nome
     const mensagensParaAPI = [
       { 
         role: "system", 
@@ -111,10 +110,10 @@ app.post('/webhook', async (req, res) => {
 
     historico.push({ role: "user", content: text });
     if (historico.length > 20) {
-      historico.shift(); // Mantém as últimas 20 mensagens no histórico rápido
+      historico.shift();
     }
 
-    // 3. Chamada para a API do OpenRouter com modelo correto
+    // 3. Chamada para a API do OpenRouter com o modelo correto
     const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: 'POST',
       headers: {
@@ -122,7 +121,7 @@ app.post('/webhook', async (req, res) => {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: "google/gemini-1.5-flash", // Modelo correto e ativo no OpenRouter
+        model: "google/gemini-flash-1.5", // Identificador oficial correto no OpenRouter
         messages: mensagensParaAPI
       })
     });
@@ -135,7 +134,7 @@ app.post('/webhook', async (req, res) => {
     if (data.choices && data.choices[0]?.message?.content) {
       replyText = data.choices[0].message.content;
       historico.push({ role: "assistant", content: replyText });
-      salvarBanco(); // Salva o novo estado da conversa permanentemente no arquivo JSON
+      salvarBanco(); // Salva permanentemente no arquivo JSON
     } else if (data.error) {
       replyText = `Erro do OpenRouter: ${data.error.message}`;
     }
