@@ -11,7 +11,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.GEMINI_
 const DATA_FILE = path.join(__dirname, 'database.json');
 const SENHA_MESTRA = "minhasenha123";
 
-// Função para carregar dados salvos (Memória Persistente)
+// 🧠 Sistema de Memória Permanente e Evolutiva (Lê do database.json)
 function carregarBanco() {
   if (fs.existsSync(DATA_FILE)) {
     try {
@@ -19,20 +19,26 @@ function carregarBanco() {
       const dados = JSON.parse(arquivo);
       return {
         usuariosAutenticados: new Set(dados.usuarios || []),
+        perfisUsuarios: new Map(Object.entries(dados.perfis || {})),
         historicoConversas: new Map(Object.entries(dados.historicos || {}))
       };
     } catch (e) {
-      console.error("Erro ao ler o banco de dados, criando novo:", e);
+      console.error("Erro ao ler o banco de dados, inicializando novo:", e);
     }
   }
-  return { usuariosAutenticados: new Set(), historicoConversas: new Map() };
+  return { 
+    usuariosAutenticados: new Set(), 
+    perfisUsuarios: new Map(), 
+    historicoConversas: new Map() 
+  };
 }
 
-// Função para salvar dados no arquivo local
+// 💾 Função para Salvar o Estado Permanentemente no Arquivo
 function salvarBanco() {
   try {
     const dados = {
       usuarios: Array.from(banco.usuariosAutenticados),
+      perfis: Object.fromEntries(banco.perfisUsuarios),
       historicos: Object.fromEntries(banco.historicoConversas)
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(dados, null, 2));
@@ -60,34 +66,55 @@ app.post('/webhook', async (req, res) => {
     const message = req.body.message;
     if (!message || !message.text) return res.sendStatus(200);
 
-    const chatId = message.chat.id.toString(); // Garantir que seja string para a Map
+    const chatId = message.chat.id.toString();
     const text = message.text;
+    const userInfo = message.from || {};
 
-    // 1. Verificação de senha por usuário com salvamento automático
+    // 👤 Reconhecimento e Perfil Evolutivo do Usuário
+    if (!banco.perfisUsuarios.has(chatId)) {
+      banco.perfisUsuarios.set(chatId, {
+        firstName: userInfo.first_name || "Amigo",
+        username: userInfo.username || "sem_username",
+        primeiroContato: new Date().toISOString()
+      });
+      salvarBanco();
+    }
+    const perfil = banco.perfisUsuarios.get(chatId);
+
+    // 1. Verificação de Senha (Persistida)
     if (!banco.usuariosAutenticados.has(chatId)) {
       if (text === SENHA_MESTRA) {
         banco.usuariosAutenticados.add(chatId);
         salvarBanco();
-        await enviarMensagemTelegram(chatId, "Senha correta! Acesso autorizado e salvo com sucesso. Como posso te ajudar?");
+        await enviarMensagemTelegram(chatId, `Senha correta! Bem-vindo de volta, ${perfil.firstName}. Acesso autorizado e salvo permanentemente.`);
       } else {
         await enviarMensagemTelegram(chatId, "🔒 Olá! Este bot é protegido. Por favor, digite a senha de acesso para continuar:");
       }
       return res.sendStatus(200);
     }
 
-    // 2. Gerenciamento do histórico por usuário (Memória de Curto e Longo Prazo)
+    // 2. Gerenciamento de Histórico (Memória de Curto Prazo)
     if (!banco.historicoConversas.has(chatId)) {
       banco.historicoConversas.set(chatId, []);
     }
     const historico = banco.historicoConversas.get(chatId);
 
-    historico.push({ role: "user", content: text });
+    // Contexto inicial injetado para a IA reconhecer quem é o usuário pelo nome
+    const mensagensParaAPI = [
+      { 
+        role: "system", 
+        content: `Você está conversando com ${perfil.firstName} (username: @${perfil.username}). Reconheça-o pelo nome e mantenha o contexto das conversas anteriores.` 
+      },
+      ...historico,
+      { role: "user", content: text }
+    ];
 
-    if (historico.length > 15) {
-      historico.shift(); // Mantém as últimas 15 mensagens
+    historico.push({ role: "user", content: text });
+    if (historico.length > 20) {
+      historico.shift(); // Mantém as últimas 20 mensagens no histórico rápido
     }
 
-    // 3. Chamada para a API do OpenRouter com modelo atualizado
+    // 3. Chamada para a API do OpenRouter com modelo correto
     const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: 'POST',
       headers: {
@@ -95,8 +122,8 @@ app.post('/webhook', async (req, res) => {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-001", // Modelo ativo no OpenRouter
-        messages: historico
+        model: "google/gemini-1.5-flash", // Modelo correto e ativo no OpenRouter
+        messages: mensagensParaAPI
       })
     });
 
@@ -108,14 +135,12 @@ app.post('/webhook', async (req, res) => {
     if (data.choices && data.choices[0]?.message?.content) {
       replyText = data.choices[0].message.content;
       historico.push({ role: "assistant", content: replyText });
-      salvarBanco(); // Salva o histórico atualizado no arquivo
+      salvarBanco(); // Salva o novo estado da conversa permanentemente no arquivo JSON
     } else if (data.error) {
       replyText = `Erro do OpenRouter: ${data.error.message}`;
     }
 
-    // Envia a resposta de volta para o Telegram
     await enviarMensagemTelegram(chatId, replyText);
-
     res.sendStatus(200);
   } catch (error) {
     console.error('Erro crítico no processamento:', error);
@@ -124,7 +149,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Bot Telegram com Memória Persistente rodando com sucesso!');
+  res.send('Bot com Memória Permanente e Evolutiva rodando com sucesso!');
 });
 
 app.listen(PORT, async () => {
