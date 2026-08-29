@@ -4,11 +4,10 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENROUTER_API_KEY = process.env.GEMINI_API_KEY; // Usa a variável que você configurou no Render
 
-// Memórias em tempo de execução
 const usuariosAutenticados = new Set();
-const historicoConversas = new Map(); // Armazena o histórico de chat por usuário
+const historicoConversas = new Map();
 const SENHA_MESTRA = "minhasenha123";
 
 async function enviarMensagemTelegram(chatId, text) {
@@ -35,47 +34,48 @@ app.post('/webhook', async (req, res) => {
     if (!usuariosAutenticados.has(chatId)) {
       if (text === SENHA_MESTRA) {
         usuariosAutenticados.add(chatId);
-        await enviarMensagemTelegram(chatId, "Senha correta! Acesso autorizado. Como posso te ajudar?");
+        await enviarMensagemTelegram(chatId, "Senha correta! Acesso autorizado via OpenRouter. Como posso te ajudar?");
       } else {
         await enviarMensagemTelegram(chatId, "🔒 Olá! Este bot é protegido. Por favor, digite a senha de acesso para continuar:");
       }
       return res.sendStatus(200);
     }
 
-    // 2. Gerenciamento do histórico de curto prazo (contexto da conversa)
+    // 2. Gerenciamento do histórico (Padrão OpenAI / OpenRouter)
     if (!historicoConversas.has(chatId)) {
       historicoConversas.set(chatId, []);
     }
     const historico = historicoConversas.get(chatId);
 
-    // Adiciona a nova mensagem do usuário ao histórico
-    historico.push({ role: "user", parts: [{ text: text }] });
+    historico.push({ role: "user", content: text });
 
-    // Mantém apenas as últimas 10 mensagens para não sobrecarregar a API
     if (historico.length > 10) {
       historico.shift();
     }
 
-    // 3. Chamada para a API do Gemini enviando todo o histórico de contexto
-    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    // 3. Chamada para a API do OpenRouter
+    const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+      },
       body: JSON.stringify({
-        contents: historico
+        model: "google/gemini-flash-1.5", // Modelo Gemini rodando através do OpenRouter
+        messages: historico
       })
     });
 
-    const geminiData = await geminiRes.json();
-    console.log("Resposta completa do Gemini:", JSON.stringify(geminiData));
+    const data = await openRouterRes.json();
+    console.log("Resposta completa do OpenRouter:", JSON.stringify(data));
 
     let replyText = "Desculpe, ocorreu um erro ao gerar a resposta.";
 
-    if (geminiData.candidates && geminiData.candidates[0]?.content?.parts?.[0]?.text) {
-      replyText = geminiData.candidates[0].content.parts[0].text;
-      // Adiciona a resposta do bot ao histórico para manter o contexto
-      historico.push({ role: "model", parts: [{ text: replyText }] });
-    } else if (geminiData.error) {
-      replyText = `Erro da API Gemini: ${geminiData.error.message}`;
+    if (data.choices && data.choices[0]?.message?.content) {
+      replyText = data.choices[0].message.content;
+      historico.push({ role: "assistant", content: replyText });
+    } else if (data.error) {
+      replyText = `Erro do OpenRouter: ${data.error.message}`;
     }
 
     // Envia a resposta de volta para o Telegram
@@ -89,7 +89,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Bot Telegram com Gemini rodando com sucesso!');
+  res.send('Bot Telegram com OpenRouter rodando com sucesso!');
 });
 
 app.listen(PORT, async () => {
