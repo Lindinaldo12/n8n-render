@@ -12,7 +12,6 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.GEMINI_
 const DATA_FILE = path.join(__dirname, 'database.json');
 const SENHA_MESTRA = "minhasenha123";
 
-// Captura qualquer erro não tratado para evitar encerramento silencioso
 process.on('uncaughtException', (err) => {
   console.error('ERRO NÃO TRATADO (uncaughtException):', err);
 });
@@ -43,7 +42,6 @@ function carregarBanco() {
   };
 }
 
-// 💾 Função para Salvar o Estado Permanentemente no Arquivo
 function salvarBanco() {
   try {
     const dados = {
@@ -81,7 +79,6 @@ app.post('/webhook', async (req, res) => {
     const text = message.text;
     const userInfo = message.from || {};
 
-    // 👤 Reconhecimento e Perfil Evolutivo do Usuário
     if (!banco.perfisUsuarios.has(chatId)) {
       banco.perfisUsuarios.set(chatId, {
         firstName: userInfo.first_name || "Amigo",
@@ -92,7 +89,6 @@ app.post('/webhook', async (req, res) => {
     }
     const perfil = banco.perfisUsuarios.get(chatId);
 
-    // 1. Verificação de Senha (Persistida no database.json)
     if (!banco.usuariosAutenticados.has(chatId)) {
       if (text === SENHA_MESTRA) {
         banco.usuariosAutenticados.add(chatId);
@@ -104,7 +100,6 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
-    // 2. Gerenciamento de Histórico (Memória de Curto Prazo)
     if (!banco.historicoConversas.has(chatId)) {
       banco.historicoConversas.set(chatId, []);
     }
@@ -124,7 +119,7 @@ app.post('/webhook', async (req, res) => {
       historico.shift();
     }
 
-    // 3. Chamada para a API do OpenRouter com modelo ativo e com endpoints garantidos
+    // Chamada para a API do OpenRouter com um modelo altamente estável
     const openRouterRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: 'POST',
       headers: {
@@ -132,7 +127,7 @@ app.post('/webhook', async (req, res) => {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-exp:free",
+        model: "deepseek/deepseek-chat", 
         messages: mensagensParaAPI
       })
     });
