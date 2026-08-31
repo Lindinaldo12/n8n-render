@@ -7,25 +7,26 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const XAI_API_KEY = process.env.XAI_API_KEY;
+
+// 🔑 Configuração universal da IA — tudo via variáveis de ambiente
+const AI_API_KEY = process.env.AI_API_KEY;
+const AI_API_URL = process.env.AI_API_URL || "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const AI_MODEL = process.env.AI_MODEL || "gemini-2.0-flash";
 
 const DATA_FILE = path.join(__dirname, 'database.json');
-const SENHA_MESTRA = "minhasenha123";
 
 process.on('uncaughtException', (err) => {
-  console.error('ERRO NÃO TRATADO (uncaughtException):', err);
+  console.error('ERRO NÃO TRATADO:', err);
 });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('REJEIÇÃO NÃO TRATADA (unhandledRejection):', reason);
+process.on('unhandledRejection', (reason) => {
+  console.error('REJEIÇÃO NÃO TRATADA:', reason);
 });
 
-// 🧠 Sistema de Memória Permanente e Evolutiva
 function carregarBanco() {
   if (fs.existsSync(DATA_FILE)) {
     try {
-      const arquivo = fs.readFileSync(DATA_FILE, 'utf8');
-      const dados = JSON.parse(arquivo);
+      const dados = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
       if (!dados.perfisUsuarios) dados.perfisUsuarios = {};
       if (!dados.historicoConversas) dados.historicoConversas = {};
       return dados;
@@ -33,13 +34,10 @@ function carregarBanco() {
       console.error('Erro ao carregar banco:', e);
     }
   }
-  return {
-    perfisUsuarios: {},
-    historicoConversas: {}
-  };
+  return { perfisUsuarios: {}, historicoConversas: {} };
 }
 
-function salvarBanco() {
+function salvarBanco(banco) {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(banco, null, 2));
   } catch (e) {
@@ -54,10 +52,10 @@ async function enviarMensagemTelegram(chatId, text) {
     await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: text })
+      body: JSON.stringify({ chat_id: chatId, text })
     });
   } catch (e) {
-    console.error("Erro ao enviar mensagem para o Telegram:", e);
+    console.error("Erro ao enviar mensagem:", e);
   }
 }
 
@@ -72,8 +70,8 @@ async function configurarWebhook() {
       body: JSON.stringify({ url: webhookUrl })
     });
     const data = await res.json();
-    console.log("Webhook configurado para:", webhookUrl);
-    console.log("Resposta do Telegram:", JSON.stringify(data));
+    console.log("Webhook configurado:", webhookUrl, JSON.stringify(data));
+    console.log(`IA configurada: ${AI_API_URL} | Modelo: ${AI_MODEL}`);
   } catch (e) {
     console.error("Erro ao configurar webhook:", e);
   }
@@ -81,7 +79,6 @@ async function configurarWebhook() {
 
 app.post('/webhook', async (req, res) => {
   try {
-    console.log("Mensagem recebida do Telegram:", JSON.stringify(req.body));
     const message = req.body.message;
     if (!message || !message.text) return res.sendStatus(200);
 
@@ -89,20 +86,15 @@ app.post('/webhook', async (req, res) => {
     const text = message.text;
     const userInfo = message.from || {};
 
-    // Criar perfil se não existir
     if (!banco.perfisUsuarios[chatId]) {
       banco.perfisUsuarios[chatId] = {
         first_name: userInfo.first_name || "usuário",
         username: userInfo.username || "",
-        language_code: userInfo.language_code || "pt-br",
         criadoEm: new Date().toISOString()
       };
-      salvarBanco();
     }
 
     const perfil = banco.perfisUsuarios[chatId];
-
-    // Inicializar histórico
     if (!banco.historicoConversas[chatId]) {
       banco.historicoConversas[chatId] = [];
     }
@@ -112,32 +104,30 @@ app.post('/webhook', async (req, res) => {
     const mensagensParaAPI = [
       {
         role: "system",
-        content: `Você está conversando com ${perfil.first_name}.`
+        content: `Você é um assistente conversando com ${perfil.first_name}.`
       },
       ...historico,
       { role: "user", content: text }
     ];
 
     historico.push({ role: "user", content: text });
-    if (historico.length > 20) {
-      historico.shift();
-    }
+    if (historico.length > 20) historico.shift();
 
-    // 🤖 Chamada para a API do Grok (xAI)
-    const iaRes = await fetch("https://api.x.ai/v1/chat/completions", {
+    // 🔑 Chamada universal — funciona com qualquer API compatível com OpenAI
+    const iaRes = await fetch(AI_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${XAI_API_KEY}`
+        'Authorization': `Bearer ${AI_API_KEY}`
       },
       body: JSON.stringify({
-        model: "grok-4",
+        model: AI_MODEL,
         messages: mensagensParaAPI
       })
     });
 
     const data = await iaRes.json();
-    console.log("Resposta completa do Grok:", JSON.stringify(data));
+    console.log("Resposta da IA:", JSON.stringify(data));
 
     let resposta = "Desculpe, não consegui processar sua mensagem.";
 
@@ -147,16 +137,11 @@ app.post('/webhook', async (req, res) => {
       resposta = `Erro: ${data.error.message || JSON.stringify(data.error)}`;
     }
 
-    // Salvar resposta no histórico
     historico.push({ role: "assistant", content: resposta });
-    if (historico.length > 20) {
-      historico.shift();
-    }
-    salvarBanco();
+    if (historico.length > 20) historico.shift();
+    salvarBanco(banco);
 
-    // Enviar resposta ao Telegram
     await enviarMensagemTelegram(chatId, resposta);
-
     res.sendStatus(200);
   } catch (error) {
     console.error("Erro no webhook:", error);
@@ -165,7 +150,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Bot está rodando! 🤖');
+  res.send('Bot rodando! 🤖');
 });
 
 app.listen(PORT, () => {
