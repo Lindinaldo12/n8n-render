@@ -1,12 +1,12 @@
 {
   "name": "telegram-gemini-bot",
   "version": "1.0.0",
-  "description": "Bot do Telegram com OpenRouter e Memoria Permanente",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.18.2",
+    "pdf-parse": "^1.1.1"
   }
 }

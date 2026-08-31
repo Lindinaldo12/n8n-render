@@ -1,17 +1,24 @@
+
+    const chatId = message.chat.id.toString();
+    const text = message.text;
+    const userInfo = message.from || {};
+
+    if (!banco.perfisUsuarios[chatId]) {
+      banco.perfisUsuarios[chatId] = {
+        first_name: userInfo.first_name || "usuário",
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const pdf = require('pdf-parse');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 const PORT = process.env.PORT || 10000;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-
-// 🔑 Configuração universal da IA — tudo via variáveis de ambiente
 const AI_API_KEY = process.env.AI_API_KEY;
 const AI_API_URL = process.env.AI_API_URL || "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-const AI_MODEL = process.env.AI_MODEL || "gemini-2.0-flash";
+const AI_MODEL = process.env.AI_MODEL || "gemini-2.5-flash";
 
 const DATA_FILE = path.join(__dirname, 'database.json');
 
@@ -77,13 +84,34 @@ async function configurarWebhook() {
   }
 }
 
+// 📎 Baixar arquivo do Telegram
+async function baixarArquivoTelegram(fileId) {
+  const infoRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
+  const info = await infoRes.json();
+  if (!info.ok) throw new Error('Não foi possível obter o arquivo');
+  const filePath = info.result.file_path;
+  const fileRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`);
+  const buffer = await fileRes.arrayBuffer();
+  return Buffer.from(buffer);
+}
+
+// 📄 Extrair texto de PDF
+async function extrairTextoPDF(buffer) {
+  try {
+    const data = await pdf(buffer);
+    return data.text;
+  } catch (e) {
+    console.error('Erro ao extrair PDF:', e);
+    return null;
+  }
+}
+
 app.post('/webhook', async (req, res) => {
   try {
     const message = req.body.message;
-    if (!message || !message.text) return res.sendStatus(200);
+    if (!message) return res.sendStatus(200);
 
     const chatId = message.chat.id.toString();
-    const text = message.text;
     const userInfo = message.from || {};
 
     if (!banco.perfisUsuarios[chatId]) {
@@ -101,19 +129,64 @@ app.post('/webhook', async (req, res) => {
 
     const historico = banco.historicoConversas[chatId];
 
+    let textoUsuario = "";
+    let imagemBase64 = null;
+
+    // 📸 Processar imagem
+    if (message.photo) {
+      const photo = message.photo[message.photo.length - 1];
+      const buffer = await baixarArquivoTelegram(photo.file_id);
+      imagemBase64 = buffer.toString('base64');
+      textoUsuario = message.caption || "Analise esta imagem em detalhes.";
+    
+    // 📄 Processar documento (PDF ou imagem como arquivo)
+    } else if (message.document) {
+      const buffer = await baixarArquivoTelegram(message.document.file_id);
+      
+      if (message.document.mime_type === 'application/pdf') {
+        const textoPDF = await extrairTextoPDF(buffer);
+        if (textoPDF) {
+          textoUsuario = `📄 PDF: ${message.document.file_name}\n\n${textoPDF.substring(0, 10000)}`;
+        } else {
+          textoUsuario = `Recebi o PDF "${message.document.file_name}" mas não consegui extrair o texto (pode ser um PDF escaneado).`;
+        }
+      } else if (message.document.mime_type?.startsWith('image/')) {
+        imagemBase64 = buffer.toString('base64');
+        textoUsuario = message.caption || "Analise esta imagem.";
+      } else {
+        textoUsuario = `Recebi o arquivo "${message.document.file_name}" mas não consigo processar este tipo ainda.`;
+      }
+    
+    // 💬 Processar texto
+    } else if (message.text) {
+      textoUsuario = message.text;
+    } else {
+      return res.sendStatus(200);
+    }
+
+    // Montar conteúdo da mensagem (texto ou texto+imagem)
+    let conteudoMensagem;
+    if (imagemBase64) {
+      conteudoMensagem = [
+        { type: "text", text: textoUsuario },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imagemBase64}` } }
+      ];
+    } else {
+      conteudoMensagem = textoUsuario;
+    }
+
     const mensagensParaAPI = [
       {
         role: "system",
-        content: `Você é um assistente conversando com ${perfil.first_name}.`
+        content: `Você é o Bob IA 🖥️, um assistente inteligente e amigável conversando com ${perfil.first_name}. Responde sempre em português, de forma clara e útil.`
       },
       ...historico,
-      { role: "user", content: text }
+      { role: "user", content: conteudoMensagem }
     ];
 
-    historico.push({ role: "user", content: text });
+    historico.push({ role: "user", content: textoUsuario });
     if (historico.length > 20) historico.shift();
 
-    // 🔑 Chamada universal — funciona com qualquer API compatível com OpenAI
     const iaRes = await fetch(AI_API_URL, {
       method: 'POST',
       headers: {
@@ -127,7 +200,6 @@ app.post('/webhook', async (req, res) => {
     });
 
     const data = await iaRes.json();
-    console.log("Resposta da IA:", JSON.stringify(data));
 
     let resposta = "Desculpe, não consegui processar sua mensagem.";
 
@@ -150,7 +222,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Bot rodando! 🤖');
+  res.send('Bob IA rodando! 🤖');
 });
 
 app.listen(PORT, () => {
