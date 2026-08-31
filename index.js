@@ -96,6 +96,82 @@ async function extrairTextoPDF(buffer) {
   }
 }
 
+// 🌤️ Função de Clima (grátis - Open-Meteo)
+async function obterCidadeCoords(cidade) {
+  const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=1&language=pt&format=json`);
+  const data = await res.json();
+  if (data.results && data.results[0]) {
+    return data.results[0];
+  }
+  return null;
+}
+
+async function obterClima(cidade) {
+  try {
+    const local = await obterCidadeCoords(cidade);
+    if (!local) return `Não encontrei a cidade "${cidade}".`;
+
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${local.latitude}&longitude=${local.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=America/Sao_Paulo`
+    );
+    const data = await res.json();
+
+    const codigosTempo = {
+      0: "Céu limpo ☀️", 1: "Predominantemente limpo 🌤️", 2: "Parcialmente nublado ⛅",
+      3: "Nublado ☁️", 45: "Névoa 🌫️", 48: "Névoa com geada 🌫️",
+      51: "Garoa leve 🌦️", 53: "Garoa 🌦️", 55: "Garoa intensa 🌦️",
+      61: "Chuva leve 🌧️", 63: "Chuva 🌧️", 65: "Chuva intensa 🌧️",
+      71: "Neve leve ❄️", 73: "Neve ❄️", 75: "Neve intensa ❄️",
+      80: "Pancadas de chuva 🌧️", 81: "Pancadas 🌧️", 82: "Pancadas violentas ⛈️",
+      95: "Tempestade ⛈️", 96: "Tempestade com granizo ⛈️", 99: "Tempestade severa ⛈️"
+    };
+
+    const c = data.current;
+    const desc = codigosTempo[c.weather_code] || "Tempo indefinido";
+
+    return `🌤️ Clima em ${local.name}, ${local.country}:\n\n` +
+           `${desc}\n` +
+           `🌡️ Temperatura: ${c.temperature_2m}°C\n` +
+           `🤒 Sensação térmica: ${c.apparent_temperature}°C\n` +
+           `💧 Umidade: ${c.relative_humidity_2m}%\n` +
+           `💨 Vento: ${c.wind_speed_10m} km/h`;
+  } catch (e) {
+    console.error('Erro ao obter clima:', e);
+    return `Erro ao buscar clima para "${cidade}".`;
+  }
+}
+
+// 🔍 Função de Pesquisa Online (grátis - DuckDuckGo)
+async function pesquisarOnline(query) {
+  try {
+    const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const html = await res.text();
+
+    const resultados = [];
+    const regex = /<a rel="nofollow" class="result__a" href="([^"]+)">(.*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>(.*?)<\/a>/g;
+    let match;
+    let count = 0;
+    while ((match = regex.exec(html)) !== null && count < 5) {
+      let titulo = match[2].replace(/<[^>]+>/g, '').trim();
+      let snippet = match[3].replace(/<[^>]+>/g, '').trim();
+      let url = match[1];
+      if (titulo && snippet) {
+        resultados.push(`📌 ${titulo}\n${snippet}\n🔗 ${url}`);
+        count++;
+      }
+    }
+
+    if (resultados.length === 0) return `Não encontrei resultados para "${query}".`;
+
+    return `🔍 Resultados para "${query}":\n\n${resultados.join('\n\n')}`;
+  } catch (e) {
+    console.error('Erro ao pesquisar:', e);
+    return `Erro ao pesquisar "${query}".`;
+  }
+}
+
 app.post('/webhook', async (req, res) => {
   try {
     const message = req.body.message;
@@ -148,6 +224,22 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // 🌤️ Comando de clima
+    if (textoUsuario.toLowerCase().startsWith('/clima ') || textoUsuario.toLowerCase().startsWith('clima ')) {
+      const cidade = textoUsuario.replace(/^\/?clima\s+/i, '').trim();
+      const resultado = await obterClima(cidade);
+      await enviarMensagemTelegram(chatId, resultado);
+      return res.sendStatus(200);
+    }
+
+    // 🔍 Comando de pesquisa
+    if (textoUsuario.toLowerCase().startsWith('/pesquisar ') || textoUsuario.toLowerCase().startsWith('/pesquisa ') || textoUsuario.toLowerCase().startsWith('pesquisar ')) {
+      const query = textoUsuario.replace(/^\/?(pesquisar|pesquisa)\s+/i, '').trim();
+      const resultado = await pesquisarOnline(query);
+      await enviarMensagemTelegram(chatId, resultado);
+      return res.sendStatus(200);
+    }
+
     let conteudoMensagem;
     if (imagemBase64) {
       conteudoMensagem = [
@@ -161,7 +253,7 @@ app.post('/webhook', async (req, res) => {
     const mensagensParaAPI = [
       {
         role: "system",
-        content: `Voce e o Bob IA, um assistente inteligente e amigavel conversando com ${perfil.first_name}. Responde sempre em portugues, de forma clara e util.`
+        content: `Voce e o Bob IA, um assistente inteligente e amigavel conversando com ${perfil.first_name}. Responde sempre em portugues, de forma clara e util. Para clima, sugira usar /clima cidade. Para pesquisar na internet, sugira usar /pesquisar termo.`
       },
       ...historico,
       { role: "user", content: conteudoMensagem }
