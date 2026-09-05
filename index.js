@@ -1,7 +1,7 @@
-const express = require('express');
+ const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const pdf = require('pdf-parse');
+const pdf = require('pdf-parse/lib/pdf-parse.js'); // caminho interno evita bug do entry point
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
