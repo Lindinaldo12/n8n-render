@@ -13,14 +13,12 @@ const AI_API_URL = process.env.AI_API_URL || "https://generativelanguage.googlea
 const AI_MODEL = process.env.AI_MODEL || "gemini-2.5-flash";
 
 const DATA_FILE = path.join(__dirname, 'database.json');
+const MAX_HISTORICO = 20;
+const MAX_PDF_CHARS = 10000;
+const MAX_RETRIES = 3;
 
-process.on('uncaughtException', (err) => {
-  console.error('ERRO NAO TRATADO:', err);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('REJEICAO NAO TRATADA:', reason);
-});
+process.on('uncaughtException', (err) => console.error('ERRO NAO TRATADO:', err));
+process.on('unhandledRejection', (reason) => console.error('REJEICAO NAO TRATADA:', reason));
 
 function carregarBanco() {
   if (fs.existsSync(DATA_FILE)) {
@@ -36,32 +34,40 @@ function carregarBanco() {
   return { perfisUsuarios: {}, historicoConversas: {} };
 }
 
+// Serializa as escritas no arquivo para evitar corrida entre requests concorrentes
+let writeQueue = Promise.resolve();
 function salvarBanco(banco) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(banco, null, 2));
-  } catch (e) {
-    console.error('Erro ao salvar banco:', e);
-  }
+  writeQueue = writeQueue.then(() => {
+    try {
+      fs.writeFileSync(DATA_FILE, JSON.stringify(banco, null, 2));
+    } catch (e) {
+      console.error('Erro ao salvar banco:', e);
+    }
+  });
 }
 
 const banco = carregarBanco();
 
 async function enviarMensagemTelegram(chatId, text) {
   try {
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text })
     });
+    const data = await res.json();
+    if (!data.ok) console.error('Telegram retornou erro:', data);
   } catch (e) {
-    console.error("Erro ao enviar mensagem:", e);
+    console.error('Erro ao enviar mensagem:', e);
   }
 }
 
 async function configurarWebhook() {
-  const webhookUrl = process.env.RENDER_EXTERNAL_URL
-    ? `${process.env.RENDER_EXTERNAL_URL}/webhook`
-    : `https://telegram-gemini-bot-pmyx.onrender.com/webhook`;
+  if (!TELEGRAM_TOKEN) return console.error('TELEGRAM_TOKEN ausente');
+  const baseUrl = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
+  const webhookUrl = baseUrl
+    ? `${baseUrl.replace(/\/$/, '')}/webhook`
+    : 'https://telegram-gemini-bot-pmyx.onrender.com/webhook';
   try {
     const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook`, {
       method: 'POST',
@@ -69,10 +75,10 @@ async function configurarWebhook() {
       body: JSON.stringify({ url: webhookUrl })
     });
     const data = await res.json();
-    console.log("Webhook configurado:", webhookUrl, JSON.stringify(data));
+    console.log('Webhook configurado:', webhookUrl, JSON.stringify(data));
     console.log(`IA configurada: ${AI_API_URL} | Modelo: ${AI_MODEL}`);
   } catch (e) {
-    console.error("Erro ao configurar webhook:", e);
+    console.error('Erro ao configurar webhook:', e);
   }
 }
 
@@ -80,8 +86,8 @@ async function baixarArquivoTelegram(fileId) {
   const infoRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/getFile?file_id=${fileId}`);
   const info = await infoRes.json();
   if (!info.ok) throw new Error('Nao foi possivel obter o arquivo');
-  const filePath = info.result.file_path;
-  const fileRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${filePath}`);
+  const fileRes = await fetch(`https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${info.result.file_path}`);
+  if (!fileRes.ok) throw new Error('Falha ao baixar arquivo');
   const buffer = await fileRes.arrayBuffer();
   return Buffer.from(buffer);
 }
@@ -96,117 +102,135 @@ async function extrairTextoPDF(buffer) {
   }
 }
 
-app.post('/webhook', async (req, res) => {
-  try {
-    const message = req.body.message;
-    if (!message) return res.sendStatus(200);
+async function chamarIA(mensagensParaAPI) {
+  let lastError = null;
+  for (let tentativa = 1; tentativa <= MAX_RETRIES; tentativa++) {
+    try {
+      const iaRes = await fetch(AI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${AI_API_KEY}`
+        },
+        body: JSON.stringify({ model: AI_MODEL, messages: mensagensParaAPI })
+      });
+      const data = await iaRes.json();
 
-    const chatId = message.chat.id.toString();
-    const userInfo = message.from || {};
-
-    if (!banco.perfisUsuarios[chatId]) {
-      banco.perfisUsuarios[chatId] = {
-        first_name: userInfo.first_name || "usuario",
-        username: userInfo.username || "",
-        criadoEm: new Date().toISOString()
-      };
-    }
-
-    const perfil = banco.perfisUsuarios[chatId];
-    if (!banco.historicoConversas[chatId]) {
-      banco.historicoConversas[chatId] = [];
-    }
-
-    const historico = banco.historicoConversas[chatId];
-
-    let textoUsuario = "";
-    let imagemBase64 = null;
-
-    if (message.photo) {
-      const photo = message.photo[message.photo.length - 1];
-      const buffer = await baixarArquivoTelegram(photo.file_id);
-      imagemBase64 = buffer.toString('base64');
-      textoUsuario = message.caption || "Analise esta imagem em detalhes.";
-    } else if (message.document) {
-      const buffer = await baixarArquivoTelegram(message.document.file_id);
-      if (message.document.mime_type === 'application/pdf') {
-        const textoPDF = await extrairTextoPDF(buffer);
-        if (textoPDF) {
-          textoUsuario = `PDF: ${message.document.file_name}\n\n${textoPDF.substring(0, 10000)}`;
-        } else {
-          textoUsuario = `Recebi o PDF "${message.document.file_name}" mas nao consegui extrair o texto.`;
-        }
-      } else if (message.document.mime_type && message.document.mime_type.startsWith('image/')) {
-        imagemBase64 = buffer.toString('base64');
-        textoUsuario = message.caption || "Analise esta imagem.";
-      } else {
-        textoUsuario = `Recebi o arquivo "${message.document.file_name}" mas nao consigo processar este tipo.`;
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content;
       }
-    } else if (message.text) {
-      textoUsuario = message.text;
-    } else {
-      return res.sendStatus(200);
+      if (data.error) {
+        // Erro pode vir como string ou objeto
+        const msg = typeof data.error === 'string'
+          ? data.error
+          : (data.error.message || JSON.stringify(data.error));
+        // Erros de auth/limite nao adianta retentar
+        if (iaRes.status === 401 || iaRes.status === 429) return `Erro da IA: ${msg}`;
+        lastError = new Error(msg);
+      } else {
+        lastError = new Error('Resposta inesperada da IA');
+      }
+    } catch (e) {
+      lastError = e;
     }
-
-    let conteudoMensagem;
-    if (imagemBase64) {
-      conteudoMensagem = [
-        { type: "text", text: textoUsuario },
-        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imagemBase64}` } }
-      ];
-    } else {
-      conteudoMensagem = textoUsuario;
-    }
-
-    const mensagensParaAPI = [
-      {
-        role: "system",
-        content: `Voce e o Bob IA, um assistente inteligente e amigavel conversando com ${perfil.first_name}. Responde sempre em portugues, de forma clara e util.`
-      },
-      ...historico,
-      { role: "user", content: conteudoMensagem }
-    ];
-
-    historico.push({ role: "user", content: textoUsuario });
-    if (historico.length > 20) historico.shift();
-
-    const iaRes = await fetch(AI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${AI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: mensagensParaAPI
-      })
-    });
-
-    const data = await iaRes.json();
-
-    let resposta = "Desculpe, nao consegui processar sua mensagem.";
-
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      resposta = data.choices[0].message.content;
-    } else if (data.error) {
-      resposta = `Erro: ${data.error.message || JSON.stringify(data.error)}`;
-    }
-
-    historico.push({ role: "assistant", content: resposta });
-    if (historico.length > 20) historico.shift();
-    salvarBanco(banco);
-
-    await enviarMensagemTelegram(chatId, resposta);
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("Erro no webhook:", error);
-    res.sendStatus(200);
+    if (tentativa < MAX_RETRIES) await new Promise(r => setTimeout(r, 1000 * tentativa));
   }
+  return `Erro: ${lastError ? lastError.message : 'falha ao chamar a IA'}`;
+}
+
+app.post('/webhook', (req, res) => {
+  // Responde 200 imediatamente: evita o Telegram reenviar o webhook em chamadas lentas
+  res.sendStatus(200);
+  const message = req.body.message;
+  if (!message) return;
+
+  processarMensagem(message).catch((err) => {
+    console.error('Erro no processamento:', err);
+    enviarMensagemTelegram(String(message.chat.id), 'Ocorreu um erro interno. Tente novamente.');
+  });
 });
 
-app.get('/', (req, res) => {
-  res.send('Bob IA rodando!');
-});
+async function processarMensagem(message) {
+  const chatId = message.chat.id.toString();
+  const userInfo = message.from || {};
+
+  if (!banco.perfisUsuarios[chatId]) {
+    banco.perfisUsuarios[chatId] = {
+      first_name: userInfo.first_name || 'usuario',
+      username: userInfo.username || '',
+      criadoEm: new Date().toISOString()
+    };
+  }
+  const perfil = banco.perfisUsuarios[chatId];
+
+  if (!banco.historicoConversas[chatId]) banco.historicoConversas[chatId] = [];
+  const historico = banco.historicoConversas[chatId];
+
+  let textoUsuario = '';
+  let imagemBase64 = null;
+  let mimeType = 'image/jpeg';
+
+  if (message.photo) {
+    const photo = message.photo[message.photo.length - 1];
+    const buffer = await baixarArquivoTelegram(photo.file_id);
+    imagemBase64 = buffer.toString('base64');
+    textoUsuario = message.caption || 'Analise esta imagem em detalhes.';
+  } else if (message.document) {
+    const buffer = await baixarArquivoTelegram(message.document.file_id);
+    const mime = message.document.mime_type || '';
+    if (mime === 'application/pdf') {
+      const textoPDF = await extrairTextoPDF(buffer);
+      if (textoPDF) {
+        textoUsuario = `PDF: ${message.document.file_name}\n\n${textoPDF.substring(0, MAX_PDF_CHARS)}`;
+      } else {
+        textoUsuario = `Recebi o PDF "${message.document.file_name}" mas nao consegui extrair o texto.`;
+      }
+    } else if (mime.startsWith('image/')) {
+      imagemBase64 = buffer.toString('base64');
+      mimeType = mime; // usa o MIME real (png, webp, etc.)
+      textoUsuario = message.caption || 'Analise esta imagem.';
+    } else {
+      textoUsuario = `Recebi o arquivo "${message.document.file_name}" mas nao consigo processar este tipo.`;
+    }
+  } else if (message.text) {
+    textoUsuario = message.text;
+  } else {
+    return;
+  }
+
+  // Conteudo da mensagem atual (suporta imagem com o MIME correto)
+  let conteudoMensagem;
+  if (imagemBase64) {
+    conteudoMensagem = [
+      { type: 'text', text: textoUsuario },
+      { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imagemBase64}` } }
+    ];
+  } else {
+    conteudoMensagem = textoUsuario;
+  }
+
+  const mensagensParaAPI = [
+    {
+      role: 'system',
+      content: `Voce e o Bob IA, um assistente inteligente e amigavel conversando com ${perfil.first_name}. Responde sempre em portugues, de forma clara e util.`
+    },
+    ...historico,
+    { role: 'user', content: conteudoMensagem }
+  ];
+
+  historico.push({ role: 'user', content: textoUsuario });
+  if (historico.length > MAX_HISTORICO) historico.shift();
+
+  const resposta = await chamarIA(mensagensParaAPI);
+
+  historico.push({ role: 'assistant', content: resposta });
+  if (historico.length > MAX_HISTORICO) historico.shift();
+  salvarBanco(banco);
+
+  await enviarMensagemTelegram(chatId, resposta);
+}
+
+app.get('/', (req, res) => res.send('Bob IA rodando!'));
 
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
