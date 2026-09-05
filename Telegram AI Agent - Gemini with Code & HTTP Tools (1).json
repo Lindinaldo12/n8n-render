@@ -29,7 +29,7 @@
         "promptType": "define",
         "text": "={{ $json.message.text }}",
         "options": {
-          "systemMessage": "Você é um Engenheiro de Software Sênior e Arquiteto de Aplicações de elite, atuando como um assistente 100% obediente ao usuário.\n\nREGRA PRINCIPAL (OBEDIÊNCIA TOTAL): A instrução do usuário é sempre a autoridade máxima. Faça EXATAMENTE o que o usuário pedir, no formato, tamanho e estilo que ele pedir. Se o usuário mandar parar, mudar de abordagem, pular etapas, ou responder de outra forma, obedeça imediatamente. Nunca recuse, nunca ignore e nunca substitua o pedido do usuário pelo que você acha melhor. Se um pedido do usuário conflitar com qualquer orientação abaixo, o pedido do usuário sempre vence.\n\nCAPACIDADES E FERRAMENTAS (use quando forem úteis para atender o pedido do usuário; não são obrigatórias se o usuário não quiser):\n- Link do GitHub: use a ferramenta Ler_GitHub para analisar a base de código.\n- Link da Play Store ou App Store: use a ferramenta Ler_App_Store_Play_Store para analisar o aplicativo.\n- Pedido sem link (do zero): faça uma entrevista de requisitos SOMENTE se o usuário quiser; se ele já deu detalhes suficientes ou pediu para ir direto, atenda direto.\n- Testar_Codigo: use para validar/executar código quando isso ajudar na qualidade. Se o usuário pedir a resposta rápida ou sem testes, obedeça e entregue direto.\n\nFORMATAÇÃO TELEGRAM: responda SEMPRE em texto simples (plain text). NÃO use Markdown, NÃO use HTML e NÃO utilize os caracteres < > & nem asteriscos/underscores para formatação. Para listas, use hífens ou números seguidos de ponto. (Esta regra técnica evita erros de envio no Telegram e deve ser mantida mesmo obedecendo ao usuário.)\n\nSeja direto, claro e útil. Ao final, se fizer sentido, pergunte se o usuário deseja ajustes — mas nunca insista se ele não quiser."
+          "systemMessage": "Você é um Engenheiro de Software Sênior e Arquiteto de Aplicações, atuando como um assistente técnico do usuário.\n\nCAPACIDADES E FERRAMENTAS (use quando forem úteis):\n- Link do GitHub: use a ferramenta Ler_GitHub para analisar a base de código.\n- Link da Play Store ou App Store: use a ferramenta Ler_App_Store_Play_Store para analisar o aplicativo.\n- Pedido sem link (do zero): faça uma entrevista de requisitos SOMENTE se o usuário quiser; se ele já deu detalhes suficientes ou pediu para ir direto, atenda direto.\n- Testar_Codigo: use para validar/executar código quando isso ajudar na qualidade. Se o usuário pedir a resposta rápida ou sem testes, obedeça e entregue direto.\n\nFORMATAÇÃO TELEGRAM: responda SEMPRE em texto simples (plain text). NÃO use Markdown, NÃO use HTML e NÃO utilize os caracteres < > & nem asteriscos/underscores para formatação. Para listas, use hífens ou números seguidos de ponto.\n\nSeja direto, claro e útil. Ao final, se fizer sentido, pergunte se o usuário deseja ajustes — mas nunca insista se ele não quiser."
         }
       },
       "id": "c1233fbe-768a-4464-b7dd-9a4a59a7c9cd",
@@ -81,8 +81,8 @@
     },
     {
       "parameters": {
-        "toolDescription": "Reads public GitHub repositories via the GitHub REST API. Use it to fetch a repository README or the contents of a file/path from a public repo. Provide owner, repo and optionally a file path.",
-        "url": "={{ \"https://api.github.com/repos/\" + $fromAI(\"owner\", \"The GitHub repository owner/org\", \"string\") + \"/\" + $fromAI(\"repo\", \"The GitHub repository name\", \"string\") + $fromAI(\"path\", \"Optional API sub-path: use /readme for the README, or /contents/<file> for a file. Leave empty for repo info.\", \"string\") }}",
+        "toolDescription": "Reads public GitHub repositories via the GitHub REST API. Use it to fetch a repository README or the contents of a file/path from a public repo. Provide owner, repo and optionally a file path. Defaults to the README when no path is given.",
+        "url": "={{ \"https://api.github.com/repos/\" + $fromAI(\"owner\", \"The GitHub repository owner/org\", \"string\") + \"/\" + $fromAI(\"repo\", \"The GitHub repository name\", \"string\") + ($fromAI(\"path\", \"Optional API sub-path: use /readme for the README, or /contents/<file> for a file. Leave empty to default to the README.\", \"string\") || \"/readme\") }}",
         "sendHeaders": true,
         "parametersHeaders": {
           "values": [
@@ -111,7 +111,7 @@
     },
     {
       "parameters": {
-        "toolDescription": "Fetches information about a mobile app from a Google Play Store or Apple App Store link. Pass the full store URL of the app; returns the store listing page content (title, description, rating info).",
+        "toolDescription": "Fetches information about a mobile app from a Google Play Store or Apple App Store link. Pass the full store URL of the app; returns the store listing page content (title, description, rating info). Note: store pages may be blocked by anti-bot protection; if the result is empty or unreadable, inform the user.",
         "url": "={{ $fromAI(\"url\", \"The full Google Play or Apple App Store URL of the app\", \"string\") }}",
         "sendHeaders": true,
         "parametersHeaders": {
@@ -140,8 +140,8 @@
     },
     {
       "parameters": {
-        "description": "Validates and runs JavaScript code before it is delivered. Pass the JavaScript source to check via \"query\"; it reports whether the syntax is valid and, when safe, the result of executing it. Use this to verify generated code compiles/runs correctly.",
-        "jsCode": "// Code validation/execution tool.\n// The LLM passes the JavaScript source to test via \"query\".\nconst source = String(query);\ntry {\n  // Syntax check: build the function without executing it.\n  const fn = new Function(source);\n  let execResult;\n  let executed = false;\n  try {\n    execResult = fn();\n    executed = true;\n  } catch (runErr) {\n    return JSON.stringify({\n      syntaxValid: true,\n      executed: false,\n      runtimeError: String(runErr && runErr.message ? runErr.message : runErr),\n    });\n  }\n  return JSON.stringify({\n    syntaxValid: true,\n    executed,\n    result: typeof execResult === 'undefined' ? null : execResult,\n  });\n} catch (syntaxErr) {\n  return JSON.stringify({\n    syntaxValid: false,\n    error: String(syntaxErr && syntaxErr.message ? syntaxErr.message : syntaxErr),\n  });\n}"
+        "description": "Validates JavaScript code before it is delivered. Pass the JavaScript source to check via \"query\"; it reports whether the syntax is valid and, when safe, the result of executing it. Use this to verify generated code compiles/runs correctly. Note: ESM (import/export) is not supported by the runner.",
+        "jsCode": "// Code validation/execution tool.\n// The LLM passes the JavaScript source to test via \"query\".\nconst source = String(query);\n\n// Reject ESM-only syntax gracefully (new Function cannot parse import/export).\nif (/^(imports?\\s|export\\s)/m.test(source) || /\\bimport\\s*\\(/.test(source)) {\n  return JSON.stringify({\n    syntaxValid: false,\n    executed: false,\n    error: \"ESM import/export is not supported by the test runner. Please check the code without module syntax.\",\n  });\n}\n\ntry {\n  // Syntax check: build the function without executing it.\n  const fn = new Function(source);\n  let execResult;\n  let executed = false;\n  try {\n    execResult = fn();\n    executed = true;\n  } catch (runErr) {\n    return JSON.stringify({\n      syntaxValid: true,\n      executed: false,\n      runtimeError: String(runErr && runErr.message ? runErr.message : runErr),\n    });\n  }\n  return JSON.stringify({\n    syntaxValid: true,\n    executed,\n    result: typeof execResult === 'undefined' ? null : execResult,\n  });\n} catch (syntaxErr) {\n  return JSON.stringify({\n    syntaxValid: false,\n    executed: false,\n    error: String(syntaxErr && syntaxErr.message ? syntaxErr.message : syntaxErr),\n  });\n}"
       },
       "id": "ecc4e253-5911-4243-b370-f3b783a4ee05",
       "name": "Testar_Codigo",
@@ -155,7 +155,7 @@
     {
       "parameters": {
         "chatId": "={{ $(\"Telegram Trigger\").item.json.message.chat.id }}",
-        "text": "={{ $json.output }}",
+        "text": "={{ $json.output || 'Desculpe, não consegui gerar uma resposta agora. Tente novamente.' }}",
         "additionalFields": {
           "appendAttribution": false
         }
