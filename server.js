@@ -20,16 +20,13 @@ const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 app.use(express.json());
 
-// Rota de verificação do servidor
 app.get('/', (req, res) => {
-  res.send('Servidor e Bot do Telegram operacionais.');
+  res.send('Servidor e Bot ativos.');
 });
 
-// Endpoint do Webhook do Telegram
-const WEBHOOK_PATH = '/telegram-webhook';
+const WEBHOOK_PATH = `/telegram/${BOT_TOKEN}`;
 app.use(bot.webhookCallback(WEBHOOK_PATH));
 
-// Evento de recepção de texto no Telegram
 bot.on('text', async (ctx) => {
   try {
     await ctx.sendChatAction('typing');
@@ -40,31 +37,29 @@ bot.on('text', async (ctx) => {
       contents: userPrompt,
     });
 
-    await ctx.reply(response.text || 'Não foi possível gerar uma resposta.');
+    await ctx.reply(response.text || 'Sem resposta gerada.');
   } catch (error) {
-    console.error('Erro ao processar mensagem no Gemini:', error);
+    console.error('Erro no Gemini:', error);
     await ctx.reply('Ocorreu um erro ao processar sua solicitação.');
   }
 });
 
-// Inicialização e vinculação do Webhook no Render
 app.listen(PORT, async () => {
-  console.log(`Servidor ativo na porta ${PORT}`);
+  console.log(`Servidor rodando na porta ${PORT}`);
 
   if (RENDER_URL) {
     const fullWebhookUrl = `${RENDER_URL}${WEBHOOK_PATH}`;
     try {
       await bot.telegram.setWebhook(fullWebhookUrl);
-      console.log(`Webhook registrado com sucesso: ${fullWebhookUrl}`);
+      console.log(`Webhook ativado em: ${fullWebhookUrl}`);
     } catch (err) {
-      console.error('Falha ao registrar Webhook no Telegram:', err);
+      console.error('Erro ao definir Webhook:', err);
     }
   } else {
-    console.log('RENDER_EXTERNAL_URL não encontrada. Executando via Polling para testes locais...');
+    console.log('Ambiente local: rodando via Polling...');
     bot.launch();
   }
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
-
