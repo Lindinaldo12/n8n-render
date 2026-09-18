@@ -2,182 +2,68 @@ require('dotenv').config();
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const { GoogleGenAI } = require('@google/genai');
-const pdfParse = require('pdf-parse');
-const cron = require('node-cron');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
-async function getTelegramFileUrl(fileId) {
-  const fileLink = await bot.telegram.getFileLink(fileId);
-  return fileLink.href;
+if (!BOT_TOKEN || !GEMINI_API_KEY) {
+  console.error('ERRO: Defina TELEGRAM_BOT_TOKEN e GEMINI_API_KEY nas variáveis de ambiente.');
+  process.exit(1);
 }
 
-async function getFileBuffer(url) {
-  const response = await fetch(url);
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
+const bot = new Telegraf(BOT_TOKEN);
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
-bot.start((ctx) => {
-  ctx.reply('👋 Olá! Sou seu assistente inteligente com Gemini.\n\nEnvie texto, fotos, áudios, arquivos PDF ou links para eu analisar!');
-});
+app.use(express.json());
 
-bot.help((ctx) => {
-  ctx.reply(
-    '📌 *Como me utilizar:*\n\n' +
-    '• *Texto:* Envie qualquer dúvida ou mensagem.\n' +
-    '• *Imagens:* Envie uma foto (com ou sem legenda).\n' +
-    '• *Áudio:* Envie uma mensagem de voz ou arquivo MP3/OGG.\n' +
-    '• *PDF:* Envie um documento em formato .pdf.\n' +
-    '• *Busca Web:* Use o comando `/buscar <sua pesquisa>`.\n',
-    { parse_mode: 'Markdown' }
-  );
-});
-
-bot.command('buscar', async (ctx) => {
-  const query = ctx.message.text.replace('/buscar', '').trim();
-  if (!query) return ctx.reply('Por favor, informe o termo para busca. Exemplo: `/buscar notícias sobre tecnologia hoje`', { parse_mode: 'Markdown' });
-
-  await ctx.sendChatAction('typing');
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: query,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
-    });
-    await ctx.reply(response.text || 'Não encontrei resultados.');
-  } catch (err) {
-    console.error('Erro na busca:', err);
-    await ctx.reply('❌ Ocorreu um erro ao realizar a busca na web.');
-  }
-});
-
-bot.on('text', async (ctx) => {
-  const text = ctx.message.text;
-  await ctx.sendChatAction('typing');
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: text
-    });
-    await ctx.reply(response.text);
-  } catch (err) {
-    console.error('Erro em texto:', err);
-    await ctx.reply('❌ Ocorreu um erro ao processar sua mensagem.');
-  }
-});
-
-bot.on('photo', async (ctx) => {
-  await ctx.sendChatAction('typing');
-  try {
-    const photos = ctx.message.photo;
-    const highestResPhoto = photos[photos.length - 1];
-    const fileUrl = await getTelegramFileUrl(highestResPhoto.file_id);
-    const buffer = await getFileBuffer(fileUrl);
-
-    const caption = ctx.message.caption || 'Descreva e analise esta imagem em detalhes.';
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          inlineData: {
-            mimeType: 'image/jpeg',
-            data: buffer.toString('base64')
-          }
-        },
-        caption
-      ]
-    });
-
-    await ctx.reply(response.text);
-  } catch (err) {
-    console.error('Erro em foto:', err);
-    await ctx.reply('❌ Erro ao analisar a imagem.');
-  }
-});
-
-bot.on(['voice', 'audio'], async (ctx) => {
-  await ctx.sendChatAction('typing');
-  try {
-    const isVoice = !!ctx.message.voice;
-    const fileId = isVoice ? ctx.message.voice.file_id : ctx.message.audio.file_id;
-    const mimeType = isVoice ? 'audio/ogg' : (ctx.message.audio.mime_type || 'audio/mp3');
-
-    const fileUrl = await getTelegramFileUrl(fileId);
-    const buffer = await getFileBuffer(fileUrl);
-
-    const caption = ctx.message.caption || 'Transcreva este áudio e faça um resumo dos pontos principais.';
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: buffer.toString('base64')
-          }
-        },
-        caption
-      ]
-    });
-
-    await ctx.reply(response.text);
-  } catch (err) {
-    console.error('Erro em áudio:', err);
-    await ctx.reply('❌ Erro ao processar o áudio.');
-  }
-});
-
-bot.on('document', async (ctx) => {
-  const doc = ctx.message.document;
-
-  if (doc.mime_type !== 'application/pdf') {
-    return ctx.reply('No momento só consigo processar documentos em formato PDF.');
-  }
-
-  await ctx.sendChatAction('typing');
-  try {
-    const fileUrl = await getTelegramFileUrl(doc.file_id);
-    const buffer = await getFileBuffer(fileUrl);
-
-    const pdfData = await pdfParse(buffer);
-    const pdfText = pdfData.text.slice(0, 30000);
-
-    const caption = ctx.message.caption || 'Resuma o conteúdo principal deste documento PDF:';
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `${caption}\n\n--- Conteúdo extraído do PDF ---\n${pdfText}`
-    });
-
-    await ctx.reply(response.text);
-  } catch (err) {
-    console.error('Erro em PDF:', err);
-    await ctx.reply('❌ Erro ao ler o arquivo PDF.');
-  }
-});
-
-cron.schedule('0 9 * * *', () => {
-  console.log('[CRON] Executando tarefa agendada diária...');
-});
-
+// Rota de verificação do servidor
 app.get('/', (req, res) => {
-  res.send('🤖 Bot Telegram + Gemini está ativo!');
+  res.send('Servidor e Bot do Telegram operacionais.');
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor Express rodando na porta ${PORT}`);
+// Endpoint do Webhook do Telegram
+const WEBHOOK_PATH = '/telegram-webhook';
+app.use(bot.webhookCallback(WEBHOOK_PATH));
+
+// Evento de recepção de texto no Telegram
+bot.on('text', async (ctx) => {
+  try {
+    await ctx.sendChatAction('typing');
+    const userPrompt = ctx.message.text;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: userPrompt,
+    });
+
+    await ctx.reply(response.text || 'Não foi possível gerar uma resposta.');
+  } catch (error) {
+    console.error('Erro ao processar mensagem no Gemini:', error);
+    await ctx.reply('Ocorreu um erro ao processar sua solicitação.');
+  }
 });
 
-bot.launch();
+// Inicialização e vinculação do Webhook no Render
+app.listen(PORT, async () => {
+  console.log(`Servidor ativo na porta ${PORT}`);
+
+  if (RENDER_URL) {
+    const fullWebhookUrl = `${RENDER_URL}${WEBHOOK_PATH}`;
+    try {
+      await bot.telegram.setWebhook(fullWebhookUrl);
+      console.log(`Webhook registrado com sucesso: ${fullWebhookUrl}`);
+    } catch (err) {
+      console.error('Falha ao registrar Webhook no Telegram:', err);
+    }
+  } else {
+    console.log('RENDER_EXTERNAL_URL não encontrada. Executando via Polling para testes locais...');
+    bot.launch();
+  }
+});
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
