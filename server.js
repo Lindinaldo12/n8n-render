@@ -1,0 +1,27 @@
+{
+  "name": "telegram-gemini-bot",
+  "version": "3.0.0",
+  "description": "Bot Telegram com Gemini (texto, imagem, PDF, audio, URL, busca web, comandos e tarefas agendadas)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "gemini",
+    "express",
+    "cron"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "pdf-parse": "^1.1.4"
+  }
+}
