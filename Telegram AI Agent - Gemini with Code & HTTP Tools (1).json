@@ -1,5 +1,5 @@
 {
-  "name": "Telegram AI Agent - Gemini with Code & HTTP Tools",
+  "name": "Telegram AI Agent Pro - Multi-Model Router",
   "nodes": [
     {
       "parameters": {
@@ -14,7 +14,7 @@
       "typeVersion": 1.5,
       "position": [
         0,
-        112
+        200
       ],
       "webhookId": "045bf8ff-1804-4c2e-83ce-c813940a0bc6",
       "credentials": {
@@ -26,19 +26,155 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ (!$env.ALLOWED_CHAT_IDS || $env.ALLOWED_CHAT_IDS === '' || $env.ALLOWED_CHAT_IDS.split(',').map(x => x.trim()).includes(String($json.message.chat.id))) ? 'ok' : 'denied' }}",
+            "typeValidation": "string"
+          },
+          "conditions": [
+            {
+              "id": "6a7b8c9d-0e1f-4a56-8f01-23456789abcd",
+              "leftValue": "={{ (!$env.ALLOWED_CHAT_IDS || $env.ALLOWED_CHAT_IDS === '' || $env.ALLOWED_CHAT_IDS.split(',').map(x => x.trim()).includes(String($json.message.chat.id))) ? 'ok' : 'denied' }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6a7b8c9d-0e1f-4a56-8f01-23456789abcd",
+      "name": "Permitido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        180,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [ { json: { text: 'Acesso não autorizado.', chatId: $json.message.chat.id } } ];"
+      },
+      "id": "6b7c8d9e-0f1a-4b67-8f12-3456789abcde",
+      "name": "Negar Acesso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.message || {};\nconst text = (msg.text || '').toString().trim();\nconst chatId = msg.chat ? msg.chat.id : null;\n\nif (text === '/start' || text === '/help') {\n  const help = '/start e /help: esta ajuda\\n' + '1. Link do GitHub: analiso o repositório.\\n' + '2. Link da Play Store ou App Store: analiso o app.\\n' + '3. Qualquer outra URL: leio a página.\\n' + '4. Informação atual (notícias, preços, docs): busco na web.\\n' + 'Tarefas curtas usam o modelo rápido; complexas usam o modelo forte, automaticamente.';\n  return [ { json: { chatId, text: help, route: 'resposta' } } ];\n}\n\nconst heavy = /(analis|desenvolv|criar|crie|planej|arquitetur|compar|debug|testar|teste|refator|codigo|código|script|funcao|função|melhor|otimiz)/i;\nconst isComplex = text.length > 140 || heavy.test(text) || text.includes('http') || text.includes('github');\nreturn [ { json: { chatId, text, route: isComplex ? 'completo' : 'rapido' } } ];"
+      },
+      "id": "1a2b3c4d-5e6f-4789-9abc-def012345678",
+      "name": "Router",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ $json.route }}",
+            "typeValidation": "string"
+          },
+          "conditions": [
+            {
+              "id": "5824e1c9-4fae-4b3e-8a2d-9c1b0d3e5f7a",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "resposta",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f7a-4890-9bcd-ef0123456789",
+      "name": "Comando direto?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ $json.route }}",
+            "typeValidation": "string"
+          },
+          "conditions": [
+            {
+              "id": "9375f2da-50bf-4c4f-9b3e-0d2c1e4f6a8b",
+              "leftValue": "={{ $json.route }}",
+              "rightValue": "completo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7a8b-4901-9cde-f0123456789a",
+      "name": "Tarefa complexa?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
         "promptType": "define",
-        "text": "={{ $json.message.text }}",
+        "text": "={{ $json.text }}",
         "options": {
-          "systemMessage": "Você é um Engenheiro de Software Sênior e Arquiteto de Aplicações, atuando como um assistente técnico do usuário.\n\nCAPACIDADES E FERRAMENTAS (use quando forem úteis):\n- Link do GitHub: use a ferramenta Ler_GitHub para analisar a base de código.\n- Link da Play Store ou App Store: use a ferramenta Ler_App_Store_Play_Store para analisar o aplicativo.\n- Pedido sem link (do zero): faça uma entrevista de requisitos SOMENTE se o usuário quiser; se ele já deu detalhes suficientes ou pediu para ir direto, atenda direto.\n- Testar_Codigo: use para validar/executar código quando isso ajudar na qualidade. Se o usuário pedir a resposta rápida ou sem testes, obedeça e entregue direto.\n\nFORMATAÇÃO TELEGRAM: responda SEMPRE em texto simples (plain text). NÃO use Markdown, NÃO use HTML e NÃO utilize os caracteres < > & nem asteriscos/underscores para formatação. Para listas, use hífens ou números seguidos de ponto.\n\nSeja direto, claro e útil. Ao final, se fizer sentido, pergunte se o usuário deseja ajustes — mas nunca insista se ele não quiser."
+          "systemMessage": "Você é um Engenheiro de Software Sênior e Arquiteto de Aplicações, atuando como assistente técnico do usuário.\n\nCAPACIDADES E FERRAMENTAS (use quando forem úteis):\n- Link do GitHub: use a ferramenta Ler_GitHub para analisar a base de código.\n- Link da Play Store ou App Store: use a ferramenta Ler_App_Store_Play_Store para analisar o aplicativo.\n- Qualquer outra URL: use a ferramenta Ler_URL para ler o conteúdo da página.\n- Informação atual (notícias, preços, documentação, mudanças recentes): use a ferramenta Busca_Web para pesquisar na internet antes de responder.\n- Testar_Codigo: use para validar e executar código quando isso ajudar na qualidade. Se o usuário pedir resposta rápida ou sem testes, obedeça e entregue direto.\n- Pedido sem link (do zero): atenda direto, sem entrevista longa, a menos que o usuário queira alinhar requisitos.\n\nFORMATAÇÃO TELEGRAM: responda SEMPRE em texto simples (plain text). NÃO use Markdown, NÃO use HTML e NÃO utilize os caracteres < > & nem asteriscos ou underscores para formatação. Para listas, use hífens ou números seguidos de ponto.\n\nSeja direto, claro e útil. Ao final, se fizer sentido, pergunte se o usuário deseja ajustes, mas nunca insista."
         }
       },
-      "id": "c1233fbe-768a-4464-b7dd-9a4a59a7c9cd",
-      "name": "AI Agent",
+      "id": "4d5e6f7a-8b9c-4a12-9def-0123456789ab",
+      "name": "AI Agent (Rapido)",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        352,
-        112
+        900,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "options": {
+          "systemMessage": "Você é um Engenheiro de Software Sênior e Arquiteto de Aplicações, atuando como assistente técnico do usuário.\n\nCAPACIDADES E FERRAMENTAS (use quando forem úteis):\n- Link do GitHub: use a ferramenta Ler_GitHub para analisar a base de código.\n- Link da Play Store ou App Store: use a ferramenta Ler_App_Store_Play_Store para analisar o aplicativo.\n- Qualquer outra URL: use a ferramenta Ler_URL para ler o conteúdo da página.\n- Informação atual (notícias, preços, documentação, mudanças recentes): use a ferramenta Busca_Web para pesquisar na internet antes de responder.\n- Testar_Codigo: use para validar e executar código quando isso ajudar na qualidade. Se o usuário pedir resposta rápida ou sem testes, obedeça e entregue direto.\n- Pedido sem link (do zero): atenda direto, sem entrevista longa, a menos que o usuário queira alinhar requisitos.\n\nFORMATAÇÃO TELEGRAM: responda SEMPRE em texto simples (plain text). NÃO use Markdown, NÃO use HTML e NÃO utilize os caracteres < > & nem asteriscos ou underscores para formatação. Para listas, use hífens ou números seguidos de ponto.\n\nSeja direto, claro e útil. Ao final, se fizer sentido, pergunte se o usuário deseja ajustes, mas nunca insista."
+        }
+      },
+      "id": "5e6f7a8b-9c0d-4b23-9ef0-123456789abc",
+      "name": "AI Agent (Completo)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        900,
+        340
       ]
     },
     {
@@ -46,13 +182,36 @@
         "modelName": "models/gemini-3.6-flash",
         "options": {}
       },
-      "id": "303ef54c-9569-45e7-822d-953f21a5f039",
-      "name": "Google Gemini Chat Model",
+      "id": "6f7a8b9c-0d1e-4c34-9f01-23456789abcd",
+      "name": "Google Gemini Chat Model (Rapido)",
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1.1,
       "position": [
-        224,
-        336
+        900,
+        540
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "jALx0SptGLNwqVEk",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.6-flash",
+        "options": {}
+      },
+      "id": "7a8b9c0d-1e2f-4d45-9012-3456789abcde",
+      "name": "Google Gemini Chat Model (Forte)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        700
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -67,16 +226,16 @@
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "sessionKey": "={{ $(\"Telegram Trigger\").item.json.message.chat.id }}",
         "contextWindowLength": 10
       },
-      "id": "7d1cc905-f751-4c24-a507-7c42bec1cc54",
+      "id": "e5f6a7b8-5555-4abc-8def-112233445566",
       "name": "Window Buffer Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.4,
       "position": [
-        352,
-        336
+        1100,
+        540
       ]
     },
     {
@@ -105,8 +264,8 @@
       "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
       "typeVersion": 1.1,
       "position": [
-        480,
-        336
+        1100,
+        640
       ]
     },
     {
@@ -134,8 +293,66 @@
       "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
       "typeVersion": 1.1,
       "position": [
-        608,
-        336
+        1100,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Reads any public web page and returns its text content. Use when the user sends a URL that is not GitHub or an app store, or to fetch details from a page found in a search.",
+        "url": "={{ $fromAI(\"url\", \"The full URL of the page to read\", \"string\") }}",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "values": [
+            {
+              "name": "User-Agent",
+              "valueProvider": "fieldValue",
+              "value": "Mozilla/5.0 (compatible; n8n-agent/1.0)"
+            }
+          ]
+        },
+        "optimizeResponse": true,
+        "responseType": "html",
+        "onlyContent": true,
+        "truncateResponse": true,
+        "maxLength": 6000
+      },
+      "id": "8b9c0d1e-2f3a-4e56-9023-456789abcdef",
+      "name": "Ler_URL",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "toolDescription": "Searches the web with DuckDuckGo (no API key needed) and returns titles, links and snippets. Use for current information: news, prices, documentation, recent changes, anything that may be out of date. Base your answer on what you find.",
+        "url": "={{ \"https://html.duckduckgo.com/html/?q=\" + encodeURIComponent($fromAI(\"query\", \"The search query\", \"string\")) }}",
+        "sendHeaders": true,
+        "parametersHeaders": {
+          "values": [
+            {
+              "name": "User-Agent",
+              "valueProvider": "fieldValue",
+              "value": "Mozilla/5.0 (compatible; n8n-agent/1.0)"
+            }
+          ]
+        },
+        "optimizeResponse": true,
+        "responseType": "html",
+        "onlyContent": true,
+        "truncateResponse": true,
+        "maxLength": 4000
+      },
+      "id": "9c0d1e2f-3a4b-4f67-9134-56789abcdef0",
+      "name": "Busca_Web",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        740
       ]
     },
     {
@@ -148,14 +365,27 @@
       "type": "@n8n/n8n-nodes-langchain.toolCode",
       "typeVersion": 1.3,
       "position": [
-        736,
-        336
+        1300,
+        840
       ]
     },
     {
       "parameters": {
-        "chatId": "={{ $(\"Telegram Trigger\").item.json.message.chat.id }}",
-        "text": "={{ $json.output || 'Desculpe, não consegui gerar uma resposta agora. Tente novamente.' }}",
+        "jsCode": "const raw = String($json.output || $json.text || '');\nconst chatId = $json.chatId || $('Telegram Trigger').item.json.message.chat.id;\nconst LIMIT = 3900;\n\nconst chunks = [];\nlet rest = raw;\nwhile (rest.length > LIMIT) {\n  let cut = rest.lastIndexOf('\\n', LIMIT);\n  if (cut < LIMIT * 0.5) cut = rest.lastIndexOf(' ', LIMIT);\n  if (cut < LIMIT * 0.5) cut = LIMIT;\n  chunks.push(rest.slice(0, cut).trim());\n  rest = rest.slice(cut).trim();\n}\nif (rest) chunks.push(rest);\nif (chunks.length === 0) chunks.push('Desculpe, não consegui gerar uma resposta agora. Tente novamente.');\nreturn chunks.map(text => ({ json: { chatId, text } }));"
+      },
+      "id": "0d1e2f3a-4b5c-4078-9245-6789abcdef01",
+      "name": "Dividir Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId || $json.message.chat.id }}",
+        "text": "={{ $json.text || 'Desculpe, não consegui gerar uma resposta agora. Tente novamente.' }}",
         "additionalFields": {
           "appendAttribution": false
         }
@@ -165,8 +395,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        816,
-        112
+        1320,
+        200
       ],
       "webhookId": "a31c3c1d-ab0c-49be-beb2-3af57357900a",
       "credentials": {
@@ -183,14 +413,32 @@
       "main": [
         [
           {
-            "node": "AI Agent",
+            "node": "Permitido?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "AI Agent": {
+    "Permitido?": {
+      "main": [
+        [
+          {
+            "node": "Router",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Negar Acesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Negar Acesso": {
       "main": [
         [
           {
@@ -201,11 +449,102 @@
         ]
       ]
     },
-    "Google Gemini Chat Model": {
+    "Router": {
+      "main": [
+        [
+          {
+            "node": "Comando direto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comando direto?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tarefa complexa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tarefa complexa?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (Completo)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent (Rapido)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (Rapido)": {
+      "main": [
+        [
+          {
+            "node": "Dividir Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (Completo)": {
+      "main": [
+        [
+          {
+            "node": "Dividir Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir Resposta": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Rapido)": {
       "ai_languageModel": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent (Rapido)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model (Forte)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent (Completo)",
             "type": "ai_languageModel",
             "index": 0
           }
@@ -216,7 +555,12 @@
       "ai_memory": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent (Rapido)",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
             "type": "ai_memory",
             "index": 0
           }
@@ -227,7 +571,12 @@
       "ai_tool": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent (Rapido)",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
             "type": "ai_tool",
             "index": 0
           }
@@ -238,7 +587,44 @@
       "ai_tool": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent (Rapido)",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ler_URL": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Rapido)",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Busca_Web": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Rapido)",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
             "type": "ai_tool",
             "index": 0
           }
@@ -249,7 +635,12 @@
       "ai_tool": [
         [
           {
-            "node": "AI Agent",
+            "node": "AI Agent (Rapido)",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "AI Agent (Completo)",
             "type": "ai_tool",
             "index": 0
           }
@@ -263,11 +654,6 @@
     "binaryMode": "separate",
     "errorWorkflow": "2OuHMa9FYcLG3bWb"
   },
-  "versionId": "c2e0a9e3-ce7b-409e-a097-14de4e2f3151",
-  "meta": {
-    "instanceId": "4fdcb7a2ea58b136476f1db5f693c85f35f35b1c4821ff8ca89efd11f88c9db0"
-  },
   "nodeGroups": [],
-  "id": "gBBjCWPj8mC5DOYk",
   "tags": []
 }
