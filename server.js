@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node --watch server.js"
   },
   "engines": {
     "node": ">=18"
@@ -19,9 +19,11 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@google/genai": "^0.1.1",
     "dotenv": "^16.4.5",
-    "express": "^4.18.2",
+    "express": "^4.19.2",
     "node-cron": "^3.0.3",
-    "pdf-parse": "^1.1.4"
+    "pdf-parse": "^1.1.4",
+    "telegraf": "^4.16.3"
   }
 }
